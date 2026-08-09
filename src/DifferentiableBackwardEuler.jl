@@ -10,7 +10,6 @@ function nlsolve_solver(f!, j!, F0, J0, y0; kwargs...)
 	soln = NLsolve.nlsolve(df, y0; kwargs...)
 	if !NLsolve.converged(soln)
 		@show soln
-		@show t
 		error("solution did not converge")
 	end
 	return soln.zero
@@ -24,7 +23,7 @@ end
 function dae_step(y0, deltah, f, f_y, f_p, f_t, p, t, M; dbe_solver=nlsolve_solver, kwargs...)
 	function f!(F, y)
 		myF = M * (y .- y0) .- deltah * f(y, p, t)
-		copy!(F, myF)
+		copyto!(F, myF)
 	end
 	function j!(J, y)
 		thisJ = M - deltah * f_y(y, p, t)
@@ -44,18 +43,19 @@ end
 
 function make_dae_step_pullback(y1, y0, deltah, f, f_y, f_p, f_t, p, t, M)
 	function dae_step_pullback(delta)
+		delta = ChainRulesCore.unthunk(delta)
 		step_y0 = -M
 		step_deltah = -f(y1, p, t)
 		step_p = -deltah * f_p(y1, p, t)
 		step_t = -deltah * f_t(y1, p, t)
 		lambda = transpose(M - deltah * f_y(y1, p, t)) \ delta
 		return (ChainRulesCore.NoTangent(),#step function
-				@ChainRulesCore.thunk(-transpose(step_y0) * lambda),#y0
-				@ChainRulesCore.thunk(-transpose(step_deltah) * lambda),#deltah
-				ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(),#f through f_t
-				@ChainRulesCore.thunk(-transpose(step_p) * lambda),#p
-				@ChainRulesCore.thunk(-transpose(step_t) * lambda),#t
-				ChainRulesCore.NoTangent())#M -- this is wrong but we're not supporting differentation w.r.t. M
+			@ChainRulesCore.thunk(-transpose(step_y0) * lambda),#y0
+			@ChainRulesCore.thunk(-transpose(step_deltah) * lambda),#deltah
+			ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(),#f through f_t
+			@ChainRulesCore.thunk(-transpose(step_p) * lambda),#p
+			@ChainRulesCore.thunk(-transpose(step_t) * lambda),#t
+			ChainRulesCore.NoTangent())#M -- this is wrong but we're not supporting differentation w.r.t. M
 	end
 	return dae_step_pullback
 end
@@ -82,6 +82,7 @@ end
 function make_dae_steps_pullback(y, y0, f, f_y, f_p, f_t, p, ts, M)
 	dae_step_pullbacks = [make_dae_step_pullback(y[:, i], y[:, i - 1], ts[i] - ts[i - 1], f, f_y, f_p, f_t, p, ts[i], M) for i = 2:size(y, 2)]
 	function dae_steps_pullback(delta)
+		delta = ChainRulesCore.unthunk(delta)
 		_, thisdy0, _, _, _, _, _, thisdp, _ = dae_step_pullbacks[size(y, 2) - 1](delta[:, size(y, 2)])
 		dy0 = ChainRulesCore.unthunk(thisdy0) .+ delta[:, size(y, 2) - 1]
 		dp = ChainRulesCore.unthunk(thisdp)
@@ -94,7 +95,7 @@ function make_dae_steps_pullback(y, y0, f, f_y, f_p, f_t, p, ts, M)
 				dy0,#y0
 				ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(),#f through f_t
 				dp,#p
-				ChainRulesCore.ZeroTangent(),#ts -- just make it zero for now
+				ChainRulesCore.NoTangent(),#ts -- not differentiated
 				ChainRulesCore.NoTangent())#M -- again this is wrong, but we basically don't support this for now
 	end
 	return dae_steps_pullback
@@ -131,8 +132,8 @@ function make_dae_steps_pullback(y, y0, f, f_y, f_p, f_t, p, t0, tfinal, ts, M)
 				dy0,#y0
 				ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(), ChainRulesCore.NoTangent(),#f through f_t
 				dp,#p
-				ChainRulesCore.ZeroTangent(),#t0 -- just make it zero for now
-				ChainRulesCore.ZeroTangent(),#tfinal -- just make it zero for now
+			ChainRulesCore.NoTangent(),#t0 -- not differentiated
+			ChainRulesCore.NoTangent(),#tfinal -- not differentiated
 				ChainRulesCore.NoTangent())#M -- this is incorrect but differentiating w.r.t. M is no supported
 	end
 	return dae_steps_pullback
