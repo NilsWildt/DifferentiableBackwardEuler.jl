@@ -54,6 +54,26 @@ end
     _, (_, dgdp_mooncake) = Mooncake.value_and_gradient!!(cache, g_p, p)
     @test isapprox(dgdp_mooncake, dgdp_naive[1]; atol=1e-6, rtol=1e-6)
 
+    #--- test scalar gradients (deltah, t) of step(...) with Zygote and Mooncake ---
+    # The right-hand side depends on t so that the t-adjoint is nonzero.
+    ft(u, p, t) = p .* u .+ t .^ 2
+    ft_u(u, p, t) = SparseArrays.spdiagm(0 => p)
+    ft_p(u, p, t) = SparseArrays.spdiagm(0 => u)
+    ft_t(u, p, t) = fill(2 * t, length(u))
+    h0, t1 = 0.1, 0.3
+    g_h(h) = sum(DBE.step(u0, h, ft, ft_u, ft_p, ft_t, p, t1))
+    g_t(t) = sum(DBE.step(u0, h0, ft, ft_u, ft_p, ft_t, p, t))
+    g_h_kw(h) = sum(DBE.dae_step(u0, h, ft, ft_u, ft_p, ft_t, p, t1, LinearAlgebra.I; dbe_solver=DBE.nlsolve_solver))
+    g_t_kw(t) = sum(DBE.dae_step(u0, h0, ft, ft_u, ft_p, ft_t, p, t, LinearAlgebra.I; dbe_solver=DBE.nlsolve_solver))
+    fd(g, x; delta=1e-6) = (g(x + delta) - g(x - delta)) / (2 * delta)
+    for (g_s, x) in ((g_h, h0), (g_t, t1), (g_h_kw, h0), (g_t_kw, t1))
+        dg_naive = fd(g_s, x)
+        @test isapprox(Zygote.gradient(g_s, x)[1], dg_naive; rtol=1e-5)
+        cache = Mooncake.prepare_gradient_cache(g_s, x)
+        _, (_, dg_mooncake) = Mooncake.value_and_gradient!!(cache, g_s, x)
+        @test isapprox(dg_mooncake, dg_naive; rtol=1e-5)
+    end
+
     #--- test gradients involving steps(..., ts) with Zygote ---
     numsteps = 10^1
     ts = collect(range(0, 1e0; length=numsteps))

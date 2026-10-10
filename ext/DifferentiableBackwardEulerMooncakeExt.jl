@@ -50,8 +50,8 @@ function Mooncake.rrule!!(
         tangent(y0_cd) .+= LinearAlgebra.transpose(M) * lambda
         tangent(p_cd)  .+= LinearAlgebra.transpose(deltah * f_p(y1, p, t)) * lambda
         # Scalar gradients: returned as rdata
-        ddeltah = -LinearAlgebra.dot(f(y1, p, t), lambda)
-        dt      = -LinearAlgebra.dot(deltah * f_t(y1, p, t), lambda)
+        ddeltah = LinearAlgebra.dot(f(y1, p, t), lambda)
+        dt      = LinearAlgebra.dot(deltah * f_t(y1, p, t), lambda)
         return (NoRData(), NoRData(), ddeltah,
                 NoRData(), NoRData(), NoRData(), NoRData(),
                 NoRData(), dt, NoRData())
@@ -95,8 +95,8 @@ function Mooncake.rrule!!(
         lambda = Jt \ dy1
         tangent(y0_cd) .+= LinearAlgebra.transpose(M) * lambda
         tangent(p_cd)  .+= LinearAlgebra.transpose(deltah * f_p(y1, p, t)) * lambda
-        ddeltah = -LinearAlgebra.dot(f(y1, p, t), lambda)
-        dt      = -LinearAlgebra.dot(deltah * f_t(y1, p, t), lambda)
+        ddeltah = LinearAlgebra.dot(f(y1, p, t), lambda)
+        dt      = LinearAlgebra.dot(deltah * f_t(y1, p, t), lambda)
         return (NoRData(), NoRData(), NoRData(),
                 NoRData(), ddeltah,
                 NoRData(), NoRData(), NoRData(), NoRData(),
